@@ -15,6 +15,7 @@ DROPBOX_URL_CT_COMPILE = "https://www.dropbox.com/scl/fi/bg82woa41npj9sfc6l58h/C
 DROPBOX_URL_BT_COMPILE = "https://www.dropbox.com/scl/fi/5au2sa502w64h32in2azi/BT-Compile.xlsx?rlkey=8do0u62sevgy3vcovrvd4ptox&dl=1"
 DROPBOX_URL_COMDEV = "https://www.dropbox.com/scl/fi/bkkqvxk9nnqkxr84qry5f/ComDev-Database_Update_20260818.xlsx?rlkey=t5691lpd5x0pax5bazvf9n8st&dl=1"
 DROPBOX_URL_NURSERY = "https://www.dropbox.com/scl/fi/4wo13modlf34h2fdmpeus/New-Nursery-Database_.xlsx?rlkey=lgj3j98jq6fbnlq3bn1h6g5et&dl=1"
+DROPBOX_URL_HSE = "https://www.dropbox.com/scl/fi/g4gxslp755l98nxo5d5av/Dashboard-HSE-Final.xlsx?rlkey=4c1xl96yor90724jswlcsg3v1&dl=1"
 
 TARGET_SPREADSHEET_ID = "1-LHCIUy1iD154WczY4Da_-iRaILtvL0mOW4gRW6YQac"
 CAMERATRAP_SPREADSHEET_ID = "1Zkm82R3ct1HY1ov_HL35M9qEJudKPCkf0wGSNGxwdQ4"
@@ -22,6 +23,7 @@ BT_SPREADSHEET_ID = "1NJPa0nnULKqlihlkZo7J9M6gALi71LZ2_cs-0qz8SuI"
 COMDEV_SPREADSHEET_ID = "1GB64g8bGV_IFjXcpRL7bu4lj9FtgRLKcUXqpNMzg50c"
 NURSERY_SPREADSHEET_ID = "1or3IIjtpas5QD8PRAfO8WdhW6iTc-xH7v0B7hNOAF5M"
 KTH_SPREADSHEET_ID = "1_8jR1z131_-9k3QVbsaGFRn8MY2JPPiEAgWOZliKo_k"
+HSE_SPREADSHEET_ID = "1ROa7ApqWNewNiI4wtV3pPHMdTDc02XrTypadPrkbM0s"
 
 SUMMARY_HEADER = [
     "No", "Grid", "KTH", "Luas", "Tipe", "Petani", "Jenis Kelamin", "Desa",
@@ -383,6 +385,22 @@ def process_log(source_workbook, target_spreadsheet):
     write_to_sheet(target_spreadsheet, "Log", clean_rows(data))
 
 
+def process_hse_sheet(source_workbook, target_spreadsheet, sheet_name, last_col):
+    if sheet_name not in source_workbook.sheetnames:
+        raise ValueError(
+            f"Sheet '{sheet_name}' tidak ditemukan. "
+            f"Sheet yang tersedia: {source_workbook.sheetnames}"
+        )
+
+    raw_data = read_sheet_rows(source_workbook[sheet_name])
+    end = col_to_index(last_col) + 1
+    data = [row[:end] for row in raw_data[3:]]
+    if not data:
+        raise ValueError(f"Sheet '{sheet_name}' kosong, tidak ada data untuk ditulis.")
+
+    write_to_sheet(target_spreadsheet, sheet_name, clean_rows(data))
+
+
 def process_follow_up_petani(source_workbook, target_spreadsheet):
     if "Follow Up Petani" not in source_workbook.sheetnames:
         return
@@ -481,6 +499,16 @@ def main():
         if nursery_spreadsheet:
             run_step("process_nursery_stock", errors, lambda: process_nursery_stock(nursery_wb, nursery_spreadsheet))
             run_step("process_log", errors, lambda: process_log(nursery_wb, nursery_spreadsheet))
+
+    hse_wb = run_step(
+        "Download Dashboard HSE", errors,
+        lambda: download_workbook(DROPBOX_URL_HSE, "Dashboard HSE"),
+    )
+    if hse_wb:
+        hse_spreadsheet = run_step("Buka spreadsheet HSE", errors, lambda: gc.open_by_key(HSE_SPREADSHEET_ID))
+        if hse_spreadsheet:
+            run_step("process_hse_register_insiden", errors, lambda: process_hse_sheet(hse_wb, hse_spreadsheet, "Register Insiden", "AO"))
+            run_step("process_hse_manhours", errors, lambda: process_hse_sheet(hse_wb, hse_spreadsheet, "Manhours", "Q"))
 
     total_elapsed = timer.time() - run_start
     print()
