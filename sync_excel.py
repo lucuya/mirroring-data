@@ -328,6 +328,41 @@ def process_kth(source_workbook, target_spreadsheet):
     write_to_sheet(target_spreadsheet, "Sheet2", clean_rows(data_nr))
 
 
+CT_KEY_HEADERS = ("Year", "Batch", "Site")
+
+
+def read_until_key_blank(sheet, key_headers, header_row=1, fallback_key_idx=(1, 2, 7)):
+    rows = []
+    key_idx = None
+    for i, row in enumerate(sheet.iter_rows(values_only=True), start=1):
+        row = list(row)
+        if i == header_row:
+            names = [str(v).strip() if v is not None else "" for v in row]
+            found = [names.index(k) for k in key_headers if k in names]
+            key_idx = found if found else list(fallback_key_idx)
+            rows.append(row)
+            continue
+        if i < header_row:
+            rows.append(row)
+            continue
+        if key_idx is None:
+            break
+        if all(_is_blank_cell(safe_get(row, k)) for k in key_idx):
+            break
+        rows.append(row)
+
+    if not rows:
+        return rows
+
+    max_cols = max(len(r) for r in rows)
+    last_col = max_cols
+    while last_col > 0 and all(
+        _is_blank_cell(r[last_col - 1]) if last_col - 1 < len(r) else True for r in rows
+    ):
+        last_col -= 1
+    return [row[:last_col] for row in rows]
+
+
 def process_ct_compile(source_workbook, target_spreadsheet):
     sheet_name = "CT Compile"
     if sheet_name not in source_workbook.sheetnames:
@@ -336,7 +371,7 @@ def process_ct_compile(source_workbook, target_spreadsheet):
             f"Sheet yang tersedia: {source_workbook.sheetnames}"
         )
 
-    data = read_sheet_rows(source_workbook[sheet_name])
+    data = read_until_key_blank(source_workbook[sheet_name], CT_KEY_HEADERS)
     if not data:
         raise ValueError(f"Sheet '{sheet_name}' kosong, tidak ada data untuk ditulis.")
 
@@ -373,6 +408,35 @@ def process_comdev(source_workbook, target_spreadsheet):
         raise ValueError(f"Sheet '{sheet_name}' kosong, tidak ada data untuk ditulis.")
 
     write_to_sheet(target_spreadsheet, "db-comdev", clean_rows(data))
+
+
+COMDEV_SHEET2_NAME = "db-comdev-2"
+
+
+def process_comdev_sheet2(source_workbook, target_spreadsheet):
+    sheet_name = "ComDev"
+    if sheet_name not in source_workbook.sheetnames:
+        raise ValueError(
+            f"Sheet '{sheet_name}' tidak ditemukan. "
+            f"Sheet yang tersedia: {source_workbook.sheetnames}"
+        )
+
+    raw_data = read_sheet_rows(source_workbook[sheet_name])
+    b, i = col_to_index("B"), col_to_index("I")
+    n, u = col_to_index("N"), col_to_index("U")
+
+    def pick(row):
+        row = list(row) + [None] * (u + 1 - len(row))
+        return row[b:i + 1] + row[n:u + 1]
+
+    if len(raw_data) < 6:
+        raise ValueError(f"Sheet '{sheet_name}' tidak punya baris header ke-6.")
+
+    data = [pick(raw_data[5])] + [pick(r) for r in raw_data[8:]]
+    if len(data) < 2:
+        raise ValueError(f"Sheet '{sheet_name}' tidak punya data mulai baris 9.")
+
+    write_to_sheet(target_spreadsheet, COMDEV_SHEET2_NAME, clean_rows(data))
 
 
 def process_nursery_stock(source_workbook, target_spreadsheet):
@@ -521,6 +585,7 @@ def main():
         comdev_spreadsheet = run_step("Buka spreadsheet ComDev", errors, lambda: gc.open_by_key(COMDEV_SPREADSHEET_ID))
         if comdev_spreadsheet:
             run_step("process_comdev", errors, lambda: process_comdev(comdev_wb, comdev_spreadsheet))
+            run_step("process_comdev_sheet2", errors, lambda: process_comdev_sheet2(comdev_wb, comdev_spreadsheet))
 
     nursery_wb = run_step(
         "Download New Nursery Database", errors,
