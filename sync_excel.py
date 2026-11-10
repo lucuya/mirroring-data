@@ -1,6 +1,7 @@
 import os
 import json
 import io
+import re
 import time as timer
 import requests
 import openpyxl
@@ -411,6 +412,60 @@ def process_comdev(source_workbook, target_spreadsheet):
 
 
 COMDEV_SHEET2_NAME = "db-comdev-2"
+COMDEV_EXTRA_START_COL = "AW"
+MONTH_NAMES = {
+    "jan", "january", "januari", "feb", "february", "februari", "mar", "march", "maret",
+    "apr", "april", "may", "mei", "jun", "june", "juni", "jul", "july", "juli",
+    "aug", "august", "agu", "agt", "agustus", "sep", "sept", "september",
+    "oct", "october", "okt", "oktober", "nov", "november", "dec", "december", "des", "desember",
+}
+
+
+def _is_numeric_only(value):
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float, Decimal)):
+        return True
+    if isinstance(value, (datetime, date, time)):
+        return True
+    text = str(value).strip().replace(",", ".")
+    try:
+        float(text)
+        return True
+    except ValueError:
+        return False
+
+
+def _is_month_only(value):
+    return str(value).strip().rstrip(".").lower() in MONTH_NAMES
+
+
+def _has_total_peserta(value):
+    return re.search(r"total[\s_\-]*peserta", str(value), re.IGNORECASE) is not None
+
+
+_MONTH_WORDS = "|".join(sorted((m for m in MONTH_NAMES if len(m) > 3), key=len, reverse=True))
+_PAREN_VENUE_DATE = re.compile(
+    r"\([^()]*(?:\b(?:19|20)\d{2}\b|\b(?:" + _MONTH_WORDS + r")\b)[^()]*\)",
+    re.IGNORECASE,
+)
+
+
+def clean_comdev_title(value):
+    text = _PAREN_VENUE_DATE.sub(" ", str(value))
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def comdev_extra_header_ok(header_value, row7_value):
+    if _is_blank_cell(header_value) or _is_blank_cell(row7_value):
+        return False
+    if _is_numeric_only(header_value):
+        return False
+    if _is_month_only(header_value):
+        return False
+    if _has_total_peserta(header_value):
+        return False
+    return True
 
 
 def process_comdev_sheet2(source_workbook, target_spreadsheet):
@@ -424,15 +479,28 @@ def process_comdev_sheet2(source_workbook, target_spreadsheet):
     raw_data = read_sheet_rows(source_workbook[sheet_name])
     b, i = col_to_index("B"), col_to_index("I")
     n, u = col_to_index("N"), col_to_index("U")
-
-    def pick(row):
-        row = list(row) + [None] * (u + 1 - len(row))
-        return row[b:i + 1] + row[n:u + 1]
+    extra_start = col_to_index(COMDEV_EXTRA_START_COL)
 
     if len(raw_data) < 6:
         raise ValueError(f"Sheet '{sheet_name}' tidak punya baris header ke-6.")
 
-    data = [pick(raw_data[5])] + [pick(r) for r in raw_data[8:]]
+    header_src = raw_data[5]
+    row7_src = raw_data[6] if len(raw_data) >= 7 else []
+    width = max(len(r) for r in raw_data)
+    extra_idx = [
+        c for c in range(extra_start, width)
+        if comdev_extra_header_ok(safe_get(header_src, c), safe_get(row7_src, c))
+        and clean_comdev_title(safe_get(header_src, c))
+    ]
+
+    def pick(row):
+        row = list(row) + [None] * (max(u, width - 1) + 1 - len(row))
+        return row[b:i + 1] + row[n:u + 1] + [row[c] for c in extra_idx]
+
+    header = pick(header_src)
+    base_len = len(header) - len(extra_idx)
+    header = header[:base_len] + [clean_comdev_title(h) for h in header[base_len:]]
+    data = [header] + [pick(r) for r in raw_data[8:]]
     if len(data) < 2:
         raise ValueError(f"Sheet '{sheet_name}' tidak punya data mulai baris 9.")
 
