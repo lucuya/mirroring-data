@@ -444,15 +444,11 @@ def _has_total_peserta(value):
     return re.search(r"total[\s_\-]*peserta", str(value), re.IGNORECASE) is not None
 
 
-_MONTH_WORDS = "|".join(sorted((m for m in MONTH_NAMES if len(m) > 3), key=len, reverse=True))
-_PAREN_VENUE_DATE = re.compile(
-    r"\([^()]*(?:\b(?:19|20)\d{2}\b|\b(?:" + _MONTH_WORDS + r")\b)[^()]*\)",
-    re.IGNORECASE,
-)
+_PAREN_GROUP = re.compile(r"\([^()]*\)")
 
 
 def clean_comdev_title(value):
-    text = _PAREN_VENUE_DATE.sub(" ", str(value))
+    text = _PAREN_GROUP.sub(" ", str(value))
     return re.sub(r"\s+", " ", text).strip()
 
 
