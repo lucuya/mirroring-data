@@ -511,7 +511,12 @@ def _split_paren_segments(inner):
 
 
 def _is_date_segment(segment):
-    return re.search(r"\d", segment) is not None or _is_month_only(segment)
+    tokens = re.findall(r"[A-Za-z]+", segment)
+    if any(t.lower() in MONTH_NAMES for t in tokens):
+        return True
+    if re.search(r"\b(?:19|20)\d{2}\b", segment):
+        return True
+    return re.fullmatch(r"[\d\s/.\-]+", segment) is not None
 
 
 def parse_comdev_header(header_value, row7_value):
