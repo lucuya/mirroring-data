@@ -507,7 +507,7 @@ def parse_comdev_date(value):
 
 
 def _split_paren_segments(inner):
-    return [seg.strip() for seg in re.split(r";|,|\s-\s", inner) if seg.strip()]
+    return [seg.strip() for seg in re.split(r";|\s+-\s+", inner) if seg.strip()]
 
 
 def _is_date_segment(segment):
@@ -521,14 +521,15 @@ def _is_date_segment(segment):
 
 def parse_comdev_header(header_value, row7_value):
     raw = str(header_value)
-    villages, date_parts = [], []
+    village, date_parts = "", []
     for group in _PAREN_GROUP.findall(raw):
-        for seg in _split_paren_segments(group[1:-1]):
-            if _is_date_segment(seg):
-                date_parts.append(seg)
-            elif seg not in villages:
-                villages.append(seg)
-    village = ", ".join(villages)
+        segments = _split_paren_segments(group[1:-1])
+        if not segments:
+            continue
+        first = segments[0]
+        if not village and not _is_date_segment(first):
+            village = first
+        date_parts.extend(seg for seg in segments if _is_date_segment(seg))
     title = clean_comdev_title(raw)
     if not _is_blank_cell(row7_value):
         date_value = parse_comdev_date(row7_value)
