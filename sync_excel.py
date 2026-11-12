@@ -506,18 +506,31 @@ def parse_comdev_date(value):
     return text
 
 
+def _split_paren_segments(inner):
+    return [seg.strip() for seg in re.split(r";|,|\s-\s", inner) if seg.strip()]
+
+
+def _is_date_segment(segment):
+    return re.search(r"\d", segment) is not None or _is_month_only(segment)
+
+
 def parse_comdev_header(header_value, row7_value):
     raw = str(header_value)
-    groups = _PAREN_GROUP.findall(raw)
-    village, paren_date = "", ""
-    if groups:
-        inner = groups[-1][1:-1].strip()
-        if " - " in inner:
-            village, paren_date = [x.strip() for x in inner.split(" - ", 1)]
-        else:
-            village = inner
+    villages, date_parts = [], []
+    for group in _PAREN_GROUP.findall(raw):
+        for seg in _split_paren_segments(group[1:-1]):
+            if _is_date_segment(seg):
+                date_parts.append(seg)
+            elif seg not in villages:
+                villages.append(seg)
+    village = ", ".join(villages)
     title = clean_comdev_title(raw)
-    date_value = parse_comdev_date(row7_value) if not _is_blank_cell(row7_value) else parse_comdev_date(paren_date) if paren_date else ""
+    if not _is_blank_cell(row7_value):
+        date_value = parse_comdev_date(row7_value)
+    elif date_parts:
+        date_value = parse_comdev_date(" - ".join(date_parts))
+    else:
+        date_value = ""
     return title, village, date_value
 
 
