@@ -8,9 +8,10 @@ import openpyxl
 import gspread
 from datetime import datetime, date, time
 from decimal import Decimal
+from openpyxl.utils.datetime import to_excel
 from google.oauth2.service_account import Credentials
 
-DROPBOX_URL_PLANTING = "https://www.dropbox.com/scl/fi/en98shfi3xvkbn8slaa5w/Database-for-Planting-Copy.xlsx?rlkey=1hncx3evuuz30haccwc9ph1wf&dl=1"
+DROPBOX_URL_PLANTING = "https://www.dropbox.com/scl/fi/yw173h2zgnm6h3965i2ra/Database-for-Planting.xlsx?rlkey=9tfv2u3u2f12w641iauyoqc6w&dl=1"
 DROPBOX_URL_FOLLOWUP = "https://www.dropbox.com/scl/fi/av13w2gl8etjfs6ai6e0i/Potential-Farmer-for-ARR.xlsx?rlkey=qeg53qzba72yguf2nt2d2ek1t&dl=1"
 DROPBOX_URL_CT_COMPILE = "https://www.dropbox.com/scl/fi/bg82woa41npj9sfc6l58h/CT-Compile.xlsx?rlkey=yu29wz7rjpgvzh7vttahexc0n&dl=1"
 DROPBOX_URL_BT_COMPILE = "https://www.dropbox.com/scl/fi/5au2sa502w64h32in2azi/BT-Compile.xlsx?rlkey=8do0u62sevgy3vcovrvd4ptox&dl=1"
@@ -18,35 +19,15 @@ DROPBOX_URL_COMDEV = "https://www.dropbox.com/scl/fi/bkkqvxk9nnqkxr84qry5f/ComDe
 DROPBOX_URL_NURSERY = "https://www.dropbox.com/scl/fi/4wo13modlf34h2fdmpeus/New-Nursery-Database_.xlsx?rlkey=lgj3j98jq6fbnlq3bn1h6g5et&dl=1"
 DROPBOX_URL_HSE = "https://www.dropbox.com/scl/fi/g4gxslp755l98nxo5d5av/Dashboard-HSE-Final.xlsx?rlkey=4c1xl96yor90724jswlcsg3v1&dl=1"
 
-TARGET_SPREADSHEET_ID = "1-LHCIUy1iD154WczY4Da_-iRaILtvL0mOW4gRW6YQac"
 CAMERATRAP_SPREADSHEET_ID = "1Zkm82R3ct1HY1ov_HL35M9qEJudKPCkf0wGSNGxwdQ4"
 BT_SPREADSHEET_ID = "1NJPa0nnULKqlihlkZo7J9M6gALi71LZ2_cs-0qz8SuI"
 COMDEV_SPREADSHEET_ID = "1GB64g8bGV_IFjXcpRL7bu4lj9FtgRLKcUXqpNMzg50c"
 NURSERY_SPREADSHEET_ID = "1or3IIjtpas5QD8PRAfO8WdhW6iTc-xH7v0B7hNOAF5M"
 KTH_SPREADSHEET_ID = "1_8jR1z131_-9k3QVbsaGFRn8MY2JPPiEAgWOZliKo_k"
 LOG_MONITORING_SPREADSHEET_ID = "1DRYnz-86Gx7mIzGaeNzUUd9xz_HoxwCgF4W-lLsOYjk"
+PLANTING_NEW_SHEET_NAME = "ARR"
+PLANTING_NEW_SPREADSHEET_ID = "1CwnGELzoAz98rcVjrCPGoAu2FljK8FYKs3PEMf0OnFU"
 HSE_SPREADSHEET_ID = "1ROa7ApqWNewNiI4wtV3pPHMdTDc02XrTypadPrkbM0s"
-
-SUMMARY_HEADER = [
-    "No", "Grid", "KTH", "Luas", "Tipe", "Petani", "Jenis Kelamin", "Desa",
-    "ID_Petak", "Tgl_Partisipasi", "Tgl_Realisasi",
-    "Agro_Reg", "Agro_BPO", "Temb_Reg", "Temb_MTL",
-    "Total_Tanaman_Karbon", "link",
-    "Insentif_T1", "Insentif_T2", "Insentif_T3", "Insentif_T4", "Insentif_T5",
-    "Insentif_T6", "Insentif_T7", "Insentif_T8", "Insentif_T9", "Insentif_T10", "Insentif_T11",
-    "Nominal_T1", "Nominal_T2", "Nominal_T3", "Nominal_T4", "Nominal_T5",
-    "Nominal_T6", "Nominal_T7", "Nominal_T8", "Nominal_T9", "Nominal_T10", "Nominal_T11",
-    "PupukPadat", "PupukCair", "tanggal_bpo", "insentifMTL", "tanggal_mtl",
-    "dusun", "luas_agro", "luas_temb", "ENL", "ENP", "Total_Tanaman",
-]
-ARR_SUMMARY_DATE_COLS = ["J", "K", "AR"]
-
-ARR_INSERTED_COLS = ("BW", "CX", "DX")
-ARR_ASAM_E_COL = ("CX", "E-Asam Keranji")
-ARR_ASAM_P_COL = ("DX", "P-Asam Keranji")
-ARR_PUPUK_COL = ("OI", "Aplikasi Pupuk")
-ARR_EXTRA_E_COLS = ("BY", "CU")
-ARR_EXTRA_P_COLS = ("CX", "DT")
 
 TARGET_CAPAIAN_MAPPING = {
     "Target Penanaman Tembawang (Ha)": "tembawang",
@@ -65,9 +46,18 @@ FOLLOW_UP_HEADER = [
 FOLLOW_UP_DATE_COLS = ["T"]
 
 
+def _serial_number(value):
+    number = to_excel(value)
+    if float(number).is_integer():
+        return int(number)
+    return round(float(number), 6)
+
+
 def clean_cell(value):
     if value is None:
         return ""
+    if isinstance(value, (datetime, date)) and not isinstance(value, bool) and value.year < 1950:
+        return _serial_number(value)
     if isinstance(value, datetime):
         return value.strftime("%Y-%m-%d %H:%M:%S")
     if isinstance(value, date):
@@ -129,7 +119,9 @@ def write_to_sheet(target_spreadsheet, sheet_name, data, date_cols=None):
     try:
         sheet = call_with_retry(target_spreadsheet.worksheet, sheet_name)
     except gspread.exceptions.WorksheetNotFound:
-        sheet = call_with_retry(target_spreadsheet.add_worksheet, title=sheet_name, rows=100, cols=20)
+        new_rows = max(len(data), 1)
+        new_cols = max(max((len(row) for row in data), default=1), 1)
+        sheet = call_with_retry(target_spreadsheet.add_worksheet, title=sheet_name, rows=new_rows, cols=new_cols)
 
     call_with_retry(sheet.clear)
     if data:
@@ -158,7 +150,13 @@ def write_to_sheet(target_spreadsheet, sheet_name, data, date_cols=None):
 def download_workbook(url, label):
     response = requests.get(url)
     response.raise_for_status()
-    return openpyxl.load_workbook(io.BytesIO(response.content), data_only=True)
+    workbook = openpyxl.load_workbook(io.BytesIO(response.content), data_only=True)
+    for sheet in workbook.worksheets:
+        title = sheet.title.replace("\xa0", " ").replace("\u2013", "-").replace("\u2014", "-")
+        title = re.sub(r"\s+", " ", title).strip()
+        if title != sheet.title and title not in workbook.sheetnames:
+            sheet.title = title
+    return workbook
 
 
 def _is_blank_cell(value):
@@ -200,93 +198,49 @@ def read_sheet_rows(sheet, empty_row_gap=100):
     return [row[:last_col] for row in rows]
 
 
-def process_arr(source_workbook, target_spreadsheet):
-    if "ARR" not in source_workbook.sheetnames:
-        return
+def process_planting_new(source_workbook, target_spreadsheet):
+    sheet_name = "ARR"
+    if sheet_name not in source_workbook.sheetnames:
+        raise ValueError(
+            f"Sheet '{sheet_name}' tidak ditemukan. "
+            f"Sheet yang tersedia: {source_workbook.sheetnames}"
+        )
 
-    raw_data = read_sheet_rows(source_workbook["ARR"])
+    raw_data = read_sheet_rows(source_workbook[sheet_name])
+    if len(raw_data) < 8:
+        raise ValueError(f"Sheet '{sheet_name}' tidak punya data mulai baris 8.")
 
-    header_row_idx = next(
-        (i for i, row in enumerate(raw_data)
-         if all(k in [str(v).strip() if v is not None else "" for v in row]
-                for k in ("No", "Kompartemen", "Nama KTH"))),
-        None,
-    )
-    if header_row_idx is None:
-        raise ValueError("Header tidak ditemukan di sheet ARR")
+    start, end = col_to_index("B"), col_to_index("EH")
+    width = end - start + 1
 
-    data = raw_data[header_row_idx:]
-    header = [str(v).strip() if v is not None else "" for v in data[0]]
-    if "No" not in header:
-        raise ValueError("Kolom 'No' tidak ditemukan di sheet ARR")
-    no_col_index = header.index("No")
+    def pick(row):
+        row = list(row) + [None] * (end + 1 - len(row))
+        out = []
+        for v in row[start:end + 1]:
+            if isinstance(v, time):
+                v = _serial_number(v)
+            elif isinstance(v, datetime) and v.time() == time(0, 0):
+                v = v.date()
+            if v == "#REF!":
+                v = ""
+            out.append(v)
+        return out
 
-    data = [row[no_col_index:] for row in data]
-    data = [row for row in data if any(str(c).strip() != "" for c in row if c is not None)]
-    data = [["" if c == "#REF!" else c for c in row] for row in data]
+    header = pick(raw_data[5])
+    rows = [pick(r) for r in raw_data[7:]]
+    rows = [r for r in rows if not _is_blank_row(r)]
+    if not rows:
+        raise ValueError(f"Sheet '{sheet_name}' tidak punya data mulai baris 8.")
 
-    if len(data) >= 2:
-        del data[1]
-
-    write_to_sheet(target_spreadsheet, "ARR", clean_rows(data))
-
-    asam_e_idx = col_to_index(ARR_ASAM_E_COL[0]) - no_col_index
-    asam_p_idx = col_to_index(ARR_ASAM_P_COL[0]) - no_col_index
-    asam_values = [(safe_get(r, asam_e_idx), safe_get(r, asam_p_idx)) for r in data]
-    pupuk_idx = col_to_index(ARR_PUPUK_COL[0])
-    pupuk_values = [safe_get(r, pupuk_idx) for r in data]
-
-    inserted_idx = {col_to_index(c) - no_col_index for c in ARR_INSERTED_COLS}
-    data = [[v for j, v in enumerate(r) if j not in inserted_idx] for r in data]
-
-    header_row = data[0]
-    e_start, e_end = col_to_index(ARR_EXTRA_E_COLS[0]), col_to_index(ARR_EXTRA_E_COLS[1])
-    p_start, p_end = col_to_index(ARR_EXTRA_P_COLS[0]), col_to_index(ARR_EXTRA_P_COLS[1])
-    extra_e_indices = list(range(e_start, e_end + 1))
-    extra_p_indices = list(range(p_start, p_end + 1))
-    extra_e_headers = [f"E-{safe_get(header_row, i)}" for i in extra_e_indices]
-    extra_p_headers = [f"P-{safe_get(header_row, i)}" for i in extra_p_indices]
-
-    summary = [
-        SUMMARY_HEADER
-        + extra_e_headers + [ARR_ASAM_E_COL[1]]
-        + extra_p_headers + [ARR_ASAM_P_COL[1]]
-        + [ARR_PUPUK_COL[1]]
-    ]
-    for row, (asam_e, asam_p), pupuk in zip(data[1:], asam_values[1:], pupuk_values[1:]):
-        gender = "Laki-laki" if safe_get(row, 8) == 1 else "Perempuan" if safe_get(row, 9) == 1 else ""
-        tipe = {"TBW": "Tembawang", "AGR": "Agroforestri"}.get(safe_get(row, 5), safe_get(row, 5))
-
-        summary_row = [
-            safe_get(row, 0), safe_get(row, 1), safe_get(row, 3), safe_get(row, 6),
-            tipe, safe_get(row, 7), gender, safe_get(row, 11),
-            safe_get(row, 13), safe_get(row, 14), safe_get(row, 15),
-            safe_get(row, 21), safe_get(row, 22), safe_get(row, 23), safe_get(row, 24),
-            safe_get(row, 48), safe_get(row, 368),
-            safe_get(row, 334), safe_get(row, 337), safe_get(row, 340),
-            safe_get(row, 343), safe_get(row, 346), safe_get(row, 349),
-            safe_get(row, 352), safe_get(row, 355), safe_get(row, 358),
-            safe_get(row, 361), safe_get(row, 364),
-            safe_get(row, 336), safe_get(row, 339), safe_get(row, 342),
-            safe_get(row, 345), safe_get(row, 348), safe_get(row, 351),
-            safe_get(row, 354), safe_get(row, 357), safe_get(row, 360),
-            safe_get(row, 363), safe_get(row, 366),
-            safe_get(row, 39), safe_get(row, 40), safe_get(row, 41),
-            safe_get(row, 43), safe_get(row, 44),
-            safe_get(row, 12), safe_get(row, 16), safe_get(row, 17),
-            safe_get(row, 18), safe_get(row, 19), safe_get(row, 47),
-        ]
-        summary_row += [safe_get(row, i) for i in extra_e_indices] + [asam_e]
-        summary_row += [safe_get(row, i) for i in extra_p_indices] + [asam_p]
-        summary_row.append(pupuk)
-        summary.append(clean_rows([summary_row])[0])
-
-    write_to_sheet(target_spreadsheet, "ARR_SUMMARY", summary, ARR_SUMMARY_DATE_COLS)
+    write_to_sheet(target_spreadsheet, PLANTING_NEW_SHEET_NAME, clean_rows([header] + rows))
 
 
 def process_target_capaian(source_workbook, target_spreadsheet):
     if "Target Capaian" not in source_workbook.sheetnames:
-        return
+        raise ValueError(
+            "Sheet 'Target Capaian' tidak ditemukan. "
+            f"Sheet yang tersedia: {source_workbook.sheetnames}"
+        )
 
     raw_data = read_sheet_rows(source_workbook["Target Capaian"])
     data = raw_data[1:]
@@ -299,18 +253,6 @@ def process_target_capaian(source_workbook, target_spreadsheet):
             row[0] = TARGET_CAPAIAN_MAPPING[uraian]
 
     write_to_sheet(target_spreadsheet, "TARGET_CAPAIAN", clean_rows(data))
-
-
-def process_cumulative_area(source_workbook, target_spreadsheet):
-    sheet_name = "Cumulative Area"
-    if sheet_name not in source_workbook.sheetnames:
-        return
-
-    raw_data = read_sheet_rows(source_workbook[sheet_name])
-
-    data = [row[1:] for row in raw_data[3:]]
-
-    write_to_sheet(target_spreadsheet, "Planting Cumulative Area", clean_rows(data))
 
 
 def process_log_monitoring(source_workbook, target_spreadsheet):
@@ -684,7 +626,10 @@ def process_hse_sheet(source_workbook, target_spreadsheet, sheet_name, last_col)
 
 def process_follow_up_petani(source_workbook, target_spreadsheet):
     if "Follow Up Petani" not in source_workbook.sheetnames:
-        return
+        raise ValueError(
+            "Sheet 'Follow Up Petani' tidak ditemukan. "
+            f"Sheet yang tersedia: {source_workbook.sheetnames}"
+        )
 
     data = read_sheet_rows(source_workbook["Follow Up Petani"])
     result = [FOLLOW_UP_HEADER]
@@ -722,16 +667,16 @@ def main():
     ]
     creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     gc = gspread.authorize(creds)
-    target_spreadsheet = gc.open_by_key(TARGET_SPREADSHEET_ID)
+    planting_new_spreadsheet = run_step("Buka spreadsheet Planting Baru", errors, lambda: gc.open_by_key(PLANTING_NEW_SPREADSHEET_ID))
 
     planting_wb = run_step(
         "Download Database-for-Planting", errors,
         lambda: download_workbook(DROPBOX_URL_PLANTING, "Database-for-Planting"),
     )
     if planting_wb:
-        run_step("process_arr", errors, lambda: process_arr(planting_wb, target_spreadsheet))
-        run_step("process_target_capaian", errors, lambda: process_target_capaian(planting_wb, target_spreadsheet))
-        run_step("process_cumulative_area", errors, lambda: process_cumulative_area(planting_wb, target_spreadsheet))
+        if planting_new_spreadsheet:
+            run_step("process_planting_new", errors, lambda: process_planting_new(planting_wb, planting_new_spreadsheet))
+            run_step("process_target_capaian", errors, lambda: process_target_capaian(planting_wb, planting_new_spreadsheet))
 
         log_monitoring_spreadsheet = run_step("Buka spreadsheet Log Monitoring", errors, lambda: gc.open_by_key(LOG_MONITORING_SPREADSHEET_ID))
         if log_monitoring_spreadsheet:
@@ -745,8 +690,8 @@ def main():
         "Download Potential-Farmer-for-ARR", errors,
         lambda: download_workbook(DROPBOX_URL_FOLLOWUP, "Potential-Farmer-for-ARR"),
     )
-    if followup_wb:
-        run_step("process_follow_up_petani", errors, lambda: process_follow_up_petani(followup_wb, target_spreadsheet))
+    if followup_wb and planting_new_spreadsheet:
+        run_step("process_follow_up_petani", errors, lambda: process_follow_up_petani(followup_wb, planting_new_spreadsheet))
 
     ct_compile_wb = run_step(
         "Download CT Compile", errors,
